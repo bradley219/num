@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
+#include <getopt.h>
+
+#define VERSION "1.1"
 
 typedef enum {
     NONE = 0,
@@ -13,8 +16,16 @@ typedef enum {
 } format_t;
 
 void usage(char *cmd) {
-    fprintf(stderr, "Usage: %s <from>\n", cmd);
-    fprintf(stderr, "<from> is an integer that may be specified as one of the following formats: 0x1f 31. b11111 037\n");
+    fprintf(stderr, "Usage: %s [OPTIONS] <from>\n", cmd);
+    fprintf(stderr, "<from> is an integer that may be specified as one of the following formats: 31. 0x1f 037 b11111\n");
+    fprintf(stderr, "OPTIONS\n");
+    fprintf(stderr, "-o --output [FORMAT]  Set the output format. Default is to output in all formats. Available formats: (dec|hex|oct|bin).\n");
+    fprintf(stderr, "-h --help             Display this help message.\n");
+    fprintf(stderr, "-v --version          Display version number.\n");
+}
+
+void version(void) {
+    printf("Version " VERSION "\n");
 }
 
 int parse(char *input, long *output) {
@@ -31,8 +42,16 @@ int parse(char *input, long *output) {
         fmt = HEX;
         input += 1;
     } else if (len > 1 && *input == '0') {
-        fmt = OCT;
-        input += 1;
+        // avoid accidental confusion with binary not prefixed with 'b'
+        const char *c = input;
+        while (*c != '\0') {
+            if (!(*c == '0' || *c == '1')) { // not a 1 or 0
+                fmt = OCT;
+                input += 1;
+                break;
+            }
+            c++;
+        }
     } else if (len > 1 && *input == 'b') {
         fmt = BIN;
         input += 1;
@@ -45,21 +64,16 @@ int parse(char *input, long *output) {
         int possible = HEX | DEC | OCT;
         const char *c = input;
         while (*c != '\0') {
-            //fprintf(stderr, "c=%c\n", *c);
-            if (*c != '0' || *c != '1') {
-                //fprintf(stderr, "not bin\n");
+            if (!(*c == '0' || *c == '1')) { // not a 1 or 0
                 possible &= ~BIN;
             }
-            if (!(*c <= '7' && *c >= '0')) {
-                //fprintf(stderr, "not oct\n");
+            if (!(*c <= '7' && *c >= '0')) { // not in [0-7]
                 possible &= ~OCT;
             }
-            if (!(*c <= '9' && *c >= '0')) {
-                //fprintf(stderr, "not dec\n");
+            if (!(*c <= '9' && *c >= '0')) { // not in [0-9]
                 possible &= ~DEC;
             }
-            if (!((*c <= 'f' && *c >= 'a') || (*c <= 'F' && *c >= 'A') || (*c <= '9' && *c >= '0'))) {
-                //fprintf(stderr, "not hex\n");
+            if (!((*c <= 'f' && *c >= 'a') || (*c <= 'F' && *c >= 'A') || (*c <= '9' && *c >= '0'))) { // not in [f-aF-A0-9]
                 possible &= ~HEX;
             }
             c++;
@@ -149,39 +163,95 @@ int binstr(long num, char *str, int breaks) {
     return c - str;
 }
 
-void printnum(long num) {
-
+void printnum(long num, format_t format) {
     char str[1024];
-    int d = 0;
-    int h = 0;
-    int o = 0;
-    int b = 0;
+    if (format == NONE) {
+        int d = 0;
+        int h = 0;
+        int o = 0;
+        int b = 0;
 
-    d = sprintf(str, "%ld     ", num);
-    h = sprintf(str + d, "0x%lx     ", num);
-    o = sprintf(str + d + h, "0%lo     ", num);
-    b = binstr(num, str + d + h + o, 4);
+        d = sprintf(str, "%ld     ", num);
+        h = sprintf(str + d, "0x%lx     ", num);
+        o = sprintf(str + d + h, "0%lo     ", num);
+        b = binstr(num, str + d + h + o, 4);
 
-    printf("%-*s%-*s%-*s%-*s\n", d, "dec", h, "hex", o, "oct", b, "bin");
-    printf("%s\n", str);
-    
-    binstr(num, str, 0);
-    printf("%*s%s\n", d + h + o, "", str);
-
+        printf("%-*s%-*s%-*s%-*s\n", d, "dec", h, "hex", o, "oct", b, "bin");
+        printf("%s\n", str);
+        
+        binstr(num, str, 0);
+        printf("%*s%s\n", d + h + o, "", str);
+    } else if (format == DEC) {
+        printf("%ld\n", num);
+    } else if (format == HEX) {
+        printf("0x%lx\n", num);
+    } else if (format == OCT) {
+        printf("0%lo\n", num);
+    } else if (format == BIN) {
+        binstr(num, str, 0);
+        printf("%s\n", str);
+    }
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        usage(argv[0]);
+    static struct option long_options[] = {
+        {"output", required_argument, 0, 'o'},
+        {"version", no_argument, 0, 'v'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+    format_t output_format = NONE;
+    while (1) {
+        int option_index = 0;
+        int c = getopt_long (argc, argv, "hvo:", long_options, &option_index);
+        if (c == -1) {
+            break;
+        }
+        switch (c) {
+            case 0:
+                break;
+            case 'o':
+                if (strcmp(optarg, "dec") == 0) {
+                    output_format = DEC;
+                } else if (strcmp(optarg, "hex") == 0) {
+                    output_format = HEX;
+                } else if (strcmp(optarg, "oct") == 0) {
+                    output_format = OCT;
+                } else if (strcmp(optarg, "bin") == 0) {
+                    output_format = BIN;
+                } else {
+                    fprintf(stderr, "unknown output format `%s'\n", optarg);
+                    return -1;
+                }
+                break;
+            case 'v':
+                version();
+                return 0;
+                break;
+            case 'h':
+                usage(argv[0]);
+                return 0;
+                break;
+            case '?':
+                break;
+            default:
+                usage(argv[0]);
+                return -1;
+                break;
+        }
+    }
+    char *cmd = argv[0];
+    argc -= optind;
+    argv += optind;
+   
+    if (argc != 1) {
+        usage(cmd);
         return -1;
     }
-
     long parsed = 0;
-    if (parse(argv[1], &parsed) != 0) {
+    if (parse(argv[0], &parsed) != 0) {
         return -1;
     }
-
-    printnum(parsed);
-
+    printnum(parsed, output_format);
     return 0;
 }
