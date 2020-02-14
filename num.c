@@ -28,7 +28,7 @@ void version(void) {
     printf("Version " VERSION "\n");
 }
 
-int parse(char *input, long *output) {
+int parse(char *input, long long *output) {
 
     format_t fmt = NONE;
     size_t len = strlen(input);
@@ -96,35 +96,40 @@ int parse(char *input, long *output) {
         }
     }
 
-    long parsed = 0;
+    long long parsed = 0;
+    char *endptr = NULL;
     switch (fmt) {
         case HEX:
             fprintf(stderr, "Format detected as hexadecimal\n");
             fmt = HEX;
-            parsed = strtol(input, NULL, 16);
+            parsed = strtoll(input, &endptr, 16);
             break;
         case DEC:
             fprintf(stderr, "Format detected as decimal\n");
             fmt = DEC;
-            parsed = strtol(input, NULL, 10);
+            parsed = strtoll(input, &endptr, 10);
             break;
         case OCT:
             fprintf(stderr, "Format detected as octal\n");
             fmt = OCT;
-            parsed = strtol(input, NULL, 8);
+            parsed = strtoll(input, &endptr, 8);
             break;
         case BIN:
             fprintf(stderr, "Format detected as binary\n");
             fmt = BIN;
-            parsed = strtol(input, NULL, 2);
+            parsed = strtoll(input, &endptr, 2);
             break;
         default:
             fprintf(stderr, "Unable to determine format for `%s'\n", input);
             return -1;
             break;
     }
-    if (parsed == LONG_MAX || parsed == LONG_MIN || errno == ERANGE) {
+    if (errno == ERANGE) {
         perror("Unable to parse");
+        return -1;
+    }
+    if (*endptr != '\0') {
+        fprintf(stderr, "Invalid character found starting at `%s'\n", endptr);
         return -1;
     }
     *output = parsed;
@@ -163,7 +168,7 @@ int binstr(long num, char *str, int breaks) {
     return c - str;
 }
 
-void printnum(long num, format_t format) {
+void printnum(long long num, format_t format) {
     char str[1024];
     if (format == NONE) {
         int d = 0;
@@ -171,9 +176,9 @@ void printnum(long num, format_t format) {
         int o = 0;
         int b = 0;
 
-        d = sprintf(str, "%ld     ", num);
-        h = sprintf(str + d, "0x%lx     ", num);
-        o = sprintf(str + d + h, "0%lo     ", num);
+        d = sprintf(str, "%lld     ", num);
+        h = sprintf(str + d, "0x%llx     ", num);
+        o = sprintf(str + d + h, "0%llo     ", num);
         b = binstr(num, str + d + h + o, 4);
 
         printf("%-*s%-*s%-*s%-*s\n", d, "dec", h, "hex", o, "oct", b, "bin");
@@ -182,11 +187,11 @@ void printnum(long num, format_t format) {
         binstr(num, str, 0);
         printf("%*s%s\n", d + h + o, "", str);
     } else if (format == DEC) {
-        printf("%ld\n", num);
+        printf("%lld\n", num);
     } else if (format == HEX) {
-        printf("0x%lx\n", num);
+        printf("0x%llx\n", num);
     } else if (format == OCT) {
-        printf("0%lo\n", num);
+        printf("0%llo\n", num);
     } else if (format == BIN) {
         binstr(num, str, 0);
         printf("%s\n", str);
@@ -248,7 +253,7 @@ int main(int argc, char *argv[]) {
         usage(cmd);
         return -1;
     }
-    long parsed = 0;
+    long long parsed = 0;
     if (parse(argv[0], &parsed) != 0) {
         return -1;
     }
